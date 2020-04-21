@@ -3,7 +3,7 @@ import { DesktopFile, DesktopParser } from './DesktopParser';
 import { readdir, readFile } from 'fs';
 import fs from "fs";
 import { exec } from "child_process";
-import { ipcRenderer } from 'electron';
+import { ipcRenderer, app } from 'electron';
 
 @Component({
     components: {}
@@ -29,6 +29,7 @@ export default class AppViewModel extends Vue {
         ipcRenderer.on('hide', () => {
             this.isVisible = false;
         });
+
         ipcRenderer.on('show', () => {
             this.isVisible = true;
             setTimeout(() => {
@@ -50,7 +51,9 @@ export default class AppViewModel extends Vue {
         return "" +
             "exec: " + suggestion.exec + "\n" +
             "icon: " + suggestion.iconPath + "\n" +
-            "categories: " + suggestion.categories.join(", ");
+            "categories: " + suggestion.categories.join(", ") + "\n" +
+            "description: " + suggestion.description + "\n" +
+            "location of desktop file: " + suggestion.desktopFileLocation;
     }
 
     public async exec(suggestion: ApplicationSuggestion): Promise<void> {
@@ -58,7 +61,19 @@ export default class AppViewModel extends Vue {
             return;
         }
 
-        exec(suggestion.exec);
+        if (suggestion.isInternal) {
+            this.execInternalAction(suggestion);
+        }
+
+        const ignoreFieldCodes = (exec: string) => {
+            return exec
+                .replace("%f", "")
+                .replace("%u", "")
+                .replace("%F", "")
+                .replace("%U", "");
+        };
+
+        exec(ignoreFieldCodes(suggestion.exec), { cwd: "/home/" + this.username });
         if (this.searchTerm !== "") {
             this.lastSelectedSuggestionBySearchTerm[this.searchTerm] = suggestion.name;
             await this.writeFileAsync("/home/" + this.username + "/.StartMenu/lastSelectedSuggestionBySearchTerm.json", this.lastSelectedSuggestionBySearchTerm);
@@ -216,6 +231,21 @@ export default class AppViewModel extends Vue {
         }
     }
 
+    private execInternalAction(suggestion: ApplicationSuggestion): void {
+        switch (suggestion.name) {
+            case "refresh-suggestion-list":
+                this.loadApplicationSuggestionsAsync();
+                break
+            case "restart-start-menu":
+                app.relaunch();
+                app.exit();
+                break;
+            case "shutdown-start-menu":
+                app.exit();
+                break;
+        }
+    }
+
     private async loadSuggestionWeightsAsync(): Promise<void> {
         if (!await this.existsAsync("/home/" + this.username + "/.StartMenu/")) {
             await this.mkdirAsync("/home/" + this.username + "/.StartMenu/");
@@ -228,8 +258,10 @@ export default class AppViewModel extends Vue {
     }
 
     private async loadApplicationSuggestionsAsync(): Promise<void> {
+        this.applicationSuggestions.splice(0);
+
         const desktopFiles = await this.readDesktopFilesAsync();
-        for (const desktopFile of desktopFiles.map(x => x).sort((a, b) => a.name.localeCompare(b.name)).reverse()) {
+        for (const desktopFile of desktopFiles.map(x => x)) {
             if (desktopFile.noDisplay === true) {
                 continue;
             }
@@ -242,15 +274,46 @@ export default class AppViewModel extends Vue {
                 continue;
             }
 
+            if (this.applicationSuggestions.find(x => x.name === desktopFile.name && x.exec === desktopFile.exec)) {
+                continue;
+            }
+
             this.applicationSuggestions.push({
+                isInternal: false,
+                desktopFileLocation: desktopFile.location,
                 name: desktopFile.name,
                 exec: desktopFile.exec,
                 iconPath: await this.iconPath(desktopFile),
+                description: desktopFile.description,
                 categories: desktopFile.categories,
                 comment: desktopFile.comment,
                 matches: []
             });
         }
+
+        this.applicationSuggestions.push({
+            isInternal: true,
+            exec: "",
+            name: "refresh-suggestion-list",
+            matches: [],
+            categories: []
+        });
+        this.applicationSuggestions.push({
+            isInternal: true,
+            exec: "",
+            name: "restart-start-menu",
+            matches: [],
+            categories: []
+        });
+        this.applicationSuggestions.push({
+            isInternal: true,
+            exec: "",
+            name: "shutdown-start-menu",
+            matches: [],
+            categories: []
+        });
+
+        this.applicationSuggestions.sort((a, b) => a.name.localeCompare(b.name)).reverse()
     }
 
     private async iconPath(desktopFile: DesktopFile): Promise<string> {
@@ -260,18 +323,23 @@ export default class AppViewModel extends Vue {
         }
 
         const basePaths = ["/usr/share/icons/", "/home/" + this.username + "/.local/share/icons/"];
-        const sizes = ["64x64", "32x32", "16x16"];
+        const sizes = ["128x128", "64x64", "32x32", "16x16"];
         const categories = ["apps", "panel"];
-        const extensions = ["svg"];
-        const theme = this.themeName ?? "hicolor";
+        const extensions = ["svg", "png", "jpg", "jpeg", "gif", "bmp"];
+        const themes: string[] = ["hicolor"];
+        if (this.themeName) {
+            themes.unshift(this.themeName);
+        }
 
-        for (const basePath of basePaths) {
+        for (const theme of themes) {
             for (const size of sizes) {
-                for (const category of categories) {
-                    for (const extension of extensions) {
-                        const location = basePath + theme + "/" + size + "/" + category + "/" + desktopFile.icon + "." + extension;
-                        if (await this.existsAsync(location)) {
-                            return location;
+                for (const basePath of basePaths) {
+                    for (const category of categories) {
+                        for (const extension of extensions) {
+                            const location = basePath + theme + "/" + size + "/" + category + "/" + desktopFile.icon + "." + extension;
+                            if (await this.existsAsync(location)) {
+                                return location;
+                            }
                         }
                     }
                 }
@@ -284,8 +352,8 @@ export default class AppViewModel extends Vue {
     private async existsAsync(path: string): Promise<boolean> {
         let resolve: (result: boolean) => void;
         const promise = new Promise<boolean>((_resolve) => resolve = _resolve);
-        fs.exists(path, (result) => {
-            resolve(result);
+        fs.access(path, (error) => {
+            resolve(error == undefined);
         });
         return promise;
     }
@@ -325,19 +393,29 @@ export default class AppViewModel extends Vue {
     }
 
     private async readDesktopFilesAsync(): Promise<DesktopFile[]> {
-        const applicationPaths = ["/usr/share/applications/", "/var/lib/snapd/desktop/applications/"];
+        const applicationPaths = [
+            "/usr/share/applications/",
+            "/var/lib/snapd/desktop/applications/",
+            "/home/" + this.username + "/Desktop/",
+            "/home/" + this.username + "/.local/share/applications/",
+            "/usr/local/share/applications/",
+            "/var/lib/flatpak/exports/share/applications/"
+        ];
+
         const result: DesktopFile[] = [];
-
         for (const applicationPath of applicationPaths) {
-            const files = await this.readdirAsync(applicationPath);
+            if (!await this.existsAsync(applicationPath)) {
+                continue;
+            }
 
+            const files = await this.readdirAsync(applicationPath);
             for (const file of files) {
                 if (!file.endsWith(".desktop")) {
                     continue;
                 }
 
                 const data = await this.readFileAsync(applicationPath + file);
-                result.push(DesktopParser.parseDesktopFile(data));
+                result.push(DesktopParser.parseDesktopFile(applicationPath + file, data));
             }
         }
 
@@ -369,9 +447,12 @@ export default class AppViewModel extends Vue {
 
 
 interface ApplicationSuggestion {
+    isInternal: boolean;
+    desktopFileLocation?: string;
     name: string;
     exec: string;
-    iconPath: string;
+    iconPath?: string;
+    description?: string;
     comment?: string;
     categories: string[]
 

@@ -101,7 +101,7 @@ app.on('ready', async () => {
       const display = screen.getDisplayMatching({ x: cursorPoint.x, y: cursorPoint.y, height: 1, width: 1 });
       win.setPosition(display.bounds.x + 10, display.bounds.y + display.workAreaSize.height - 500);
       win.setResizable(true);
-      win.setSize(400, 500, true);
+      win.setSize(400, 510, true);
       isWinVisible = true;
       win.setResizable(false);
       win.setSkipTaskbar(true);

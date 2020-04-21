@@ -30,7 +30,7 @@
 </template>
 
 <script lang="ts">
-import AppViewModel from "@/AppViewModel";
+import AppViewModel from "./AppViewModel";
 export default AppViewModel;
 </script>
 
@@ -58,10 +58,11 @@ export default AppViewModel;
 
 .suggestions-container {
   scroll-snap-type: y mandatory;
-  height: 465px;
+  box-sizing: border-box;
   padding-left: 5px;
-  padding-top: 5px;
-  max-height: 465px;
+  height: 475px;
+  min-height: 475px;
+  max-height: 475px;
   overflow-y: scroll;
   display: flex;
   flex-flow: column nowrap;
@@ -81,11 +82,13 @@ export default AppViewModel;
 }
 
 .suggestion {
-  cursor: pointer;
   scroll-snap-align: start;
+  position: relative;
+  cursor: pointer;
   display: flex;
-  height: 20px;
-  padding: 2px;
+  box-sizing: border-box;
+  height: 25px;
+  min-height: 25px;
 }
 
 .suggestion.selected {
@@ -93,10 +96,18 @@ export default AppViewModel;
 }
 
 .icon {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
   padding-right: 10px;
-  width: 16px;
-  height: 16px;
+  width: 25px;
+  height: 25px;
 }
+
+.name {
+  margin-left: 36px;
+}
+
 body {
   display: block;
   margin: 0;
@@ -106,7 +117,7 @@ body {
   border-left: 1px solid #ddd;
   border-top: 1px solid #ddd;
   border-right: 1px solid #ddd;
-  font-family: Avenir, Helvetica, Arial, sans-serif;
+  font-family: "Noto Sans", Avenir, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-align: center;

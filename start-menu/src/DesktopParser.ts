@@ -1,14 +1,16 @@
 import { read, readdir } from 'fs';
 
 export class DesktopParser {
-    static parseDesktopFile(data: Buffer): DesktopFile {
+    static parseDesktopFile(path: string, data: Buffer): DesktopFile {
         const text = data.toString();
         const lines = text.split("\n");
 
         const result: DesktopFile = {
+            location: path,
             name: "",
             exec: "",
             categories: [],
+            keywords: [],
             notShowIn: [],
             onlyShowIn: []
         };
@@ -43,6 +45,9 @@ export class DesktopParser {
             if (line.startsWith("Categories=")) {
                 result.categories = line.substring("Categories=".length).trimEnd().split(";").filter(x => x.trim() != "");
             }
+            if (line.startsWith("Keywords=")) {
+                result.keywords = line.substring("Keywords=".length).trimEnd().split(";").filter(x => x.trim() != "");
+            }
             if (line.startsWith("NoDisplay=")) {
                 result.noDisplay = line.substring("NoDisplay=".length).trimEnd().toLocaleLowerCase() === "true";
             }
@@ -52,6 +57,9 @@ export class DesktopParser {
             if (line.startsWith("NotShowIn=")) {
                 result.notShowIn = line.substring("NotShowIn=".length).trimEnd().split(";").filter(x => x.trim() != "");
             }
+            if (line.startsWith("Description=")) {
+                result.description = line.substring("Description=".length).trimEnd();
+            }
         }
 
         return result;
@@ -59,10 +67,13 @@ export class DesktopParser {
 }
 
 export interface DesktopFile {
+    location: string;
     name: string;
     exec: string;
+    description?: string;
     icon?: string;
     comment?: string;
+    keywords: string[];
     noDisplay?: boolean;
     onlyShowIn: string[];
     notShowIn: string[];
